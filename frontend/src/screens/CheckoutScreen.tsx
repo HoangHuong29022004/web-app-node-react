@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -30,6 +31,12 @@ type ShippingInfo = {
   note: string;
 };
 
+interface MomoPaymentResponse {
+  paymentUrl: string;
+  deeplink: string;
+  qrCodeUrl: string;
+}
+
 const CheckoutScreen = ({ navigation }: Props) => {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -43,7 +50,7 @@ const CheckoutScreen = ({ navigation }: Props) => {
     ward: '',
     note: '',
   });
-  const [selectedPayment, setSelectedPayment] = useState<'cod' | 'banking'>('cod');
+  const [selectedPayment, setSelectedPayment] = useState<'cod' | 'momo'>('cod');
 
   useEffect(() => {
     fetchCart();
@@ -90,14 +97,80 @@ const CheckoutScreen = ({ navigation }: Props) => {
       
       if (response.success && response.data) {
         setCart(response.data);
+
+        if (selectedPayment === 'momo' && response.data && 'paymentUrl' in response.data) {
+          const momoData = response.data as unknown as MomoPaymentResponse;
+          Alert.alert(
+            'Chọn phương thức thanh toán MoMo',
+            'Vui lòng chọn cách thanh toán',
+            [
+              {
+                text: 'Mở app MoMo',
+                onPress: async () => {
+                  try {
+                    if (momoData.deeplink) {
+                      const supported = await Linking.canOpenURL(momoData.deeplink);
+                      if (supported) {
+                        await Linking.openURL(momoData.deeplink);
+                      } else {
+                        Alert.alert(
+                          'Thông báo', 
+                          'Bạn chưa cài đặt ứng dụng MoMo. Vui lòng cài đặt hoặc chọn quét mã QR.',
+                          [
+                            {
+                              text: 'Cài đặt MoMo',
+                              onPress: () => Linking.openURL('https://play.google.com/store/apps/details?id=com.mservice.momotransfer'),
+                            },
+                            {
+                              text: 'Quét mã QR',
+                              onPress: () => {
+                                if (momoData.qrCodeUrl) {
+                                  Linking.openURL(momoData.qrCodeUrl);
+                                }
+                              },
+                            }
+                          ]
+                        );
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Lỗi mở app MoMo:', error);
+                    Alert.alert('Lỗi', 'Không thể mở ứng dụng MoMo');
+                  }
+                }
+              },
+              {
+                text: 'Quét mã QR',
+                onPress: () => {
+                  if (momoData.qrCodeUrl) {
+                    Linking.openURL(momoData.qrCodeUrl);
+                  }
+                }
+              },
+              {
+                text: 'Hủy',
+                style: 'cancel'
+              }
+            ]
+          );
+        }
       } else {
-        Alert.alert('Lỗi', 'Không thể tải giỏ hàng');
+        const errorMessage = response.message || 'Có lỗi xảy ra khi đặt hàng';
+        console.error('Lỗi đặt hàng chi tiết:', errorMessage);
+        Alert.alert('Lỗi', errorMessage);
       }
     } catch (error) {
-      console.error('Lỗi lấy giỏ hàng:', error);
-      Alert.alert('Lỗi', 'Không thể tải giỏ hàng. Vui lòng thử lại sau.');
+      console.error('Lỗi đặt hàng:', error);
+      let errorMessage = 'Không thể đặt hàng. Vui lòng thử lại sau.';
+      
+      if (error instanceof Error) {
+        console.error('Chi tiết lỗi:', error.message);
+        errorMessage = `Lỗi: ${error.message}`;
+      }
+      
+      Alert.alert('Lỗi', errorMessage);
     } finally {
-      setLoading(false);
+      setPlacing(false);
     }
   };
 
@@ -120,18 +193,15 @@ const CheckoutScreen = ({ navigation }: Props) => {
       return;
     }
 
-    // Kiểm tra thông tin giao hàng
     if (!shippingInfo.fullName || !shippingInfo.phone || !shippingInfo.address) {
       Alert.alert('Thông báo', 'Vui lòng nhập đầy đủ thông tin giao hàng');
       return;
     }
     
-    // Bắt đầu quá trình đặt hàng
     setPlacing(true);
     
     try {
-      // Đảm bảo giá trị paymentMethod là một trong các giá trị hợp lệ: 'COD', 'VNPAY', 'MOMO'
-      const paymentMethod = selectedPayment === 'cod' ? 'COD' : 'VNPAY';
+      const paymentMethod = selectedPayment === 'cod' ? 'COD' : 'MOMO';
       
       const orderData = {
         shippingAddress: {
@@ -168,23 +238,36 @@ const CheckoutScreen = ({ navigation }: Props) => {
       }
       
       if (response.success) {
-        // Xóa thông tin giỏ hàng khỏi state
         setCart(null);
-        
-        Alert.alert(
-          'Thành công',
-          'Đặt hàng thành công. Cảm ơn bạn đã mua hàng!',
-          [
-            {
-              text: 'Xem đơn hàng',
-              onPress: () => navigation.navigate('OrderHistory')
-            },
-            {
-              text: 'Trang chủ',
-              onPress: () => navigation.navigate('Main', { screen: 'HomeTab' })
+
+        if (selectedPayment === 'momo' && response.data && 'paymentUrl' in response.data) {
+          const momoData = response.data as unknown as MomoPaymentResponse;
+          try {
+            if (momoData.paymentUrl) {
+              await Linking.openURL(momoData.paymentUrl);
+            } else {
+              Alert.alert('Lỗi', 'Không thể lấy được đường dẫn thanh toán MoMo');
             }
-          ]
-        );
+          } catch (error) {
+            console.error('Lỗi mở trang thanh toán MoMo:', error);
+            Alert.alert('Lỗi', 'Không thể mở trang thanh toán MoMo. Vui lòng thử lại sau.');
+          }
+        } else if (selectedPayment === 'cod') {
+          Alert.alert(
+            'Thành công',
+            'Đặt hàng thành công. Cảm ơn bạn đã mua hàng!',
+            [
+              {
+                text: 'Xem đơn hàng',
+                onPress: () => navigation.navigate('OrderHistory')
+              },
+              {
+                text: 'Trang chủ',
+                onPress: () => navigation.navigate('Main', { screen: 'HomeTab' })
+              }
+            ]
+          );
+        }
       } else {
         const errorMessage = response.message || 'Có lỗi xảy ra khi đặt hàng';
         console.error('Lỗi đặt hàng chi tiết:', errorMessage);
@@ -194,7 +277,6 @@ const CheckoutScreen = ({ navigation }: Props) => {
       console.error('Lỗi đặt hàng:', error);
       let errorMessage = 'Không thể đặt hàng. Vui lòng thử lại sau.';
       
-      // Kiểm tra loại lỗi để hiển thị thông báo phù hợp
       if (error instanceof Error) {
         console.error('Chi tiết lỗi:', error.message);
         errorMessage = `Lỗi: ${error.message}`;
@@ -285,20 +367,20 @@ const CheckoutScreen = ({ navigation }: Props) => {
           <TouchableOpacity
             style={[
               styles.paymentOption,
-              selectedPayment === 'banking' && styles.selectedPayment,
+              selectedPayment === 'momo' && styles.selectedPayment,
             ]}
-            onPress={() => setSelectedPayment('banking')}
+            onPress={() => setSelectedPayment('momo')}
           >
             <Icon
               name={
-                selectedPayment === 'banking'
+                selectedPayment === 'momo'
                   ? 'radio-button-on'
                   : 'radio-button-off'
               }
               size={24}
-              color={selectedPayment === 'banking' ? '#000' : '#666'}
+              color={selectedPayment === 'momo' ? '#000' : '#666'}
             />
-            <Text style={styles.paymentText}>Chuyển khoản ngân hàng</Text>
+            <Text style={styles.paymentText}>Thanh toán qua MoMo</Text>
           </TouchableOpacity>
         </View>
 

@@ -58,6 +58,9 @@ export interface OrdersResponse {
 // Định nghĩa kiểu dữ liệu cho response trả về một đơn hàng
 export interface OrderResponse {
   order: Order;
+  paymentUrl?: string;
+  deeplink?: string;
+  qrCodeUrl?: string;
 }
 
 // Định nghĩa kiểu dữ liệu cho request tạo đơn hàng
