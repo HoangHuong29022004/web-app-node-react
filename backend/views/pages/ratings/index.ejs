@@ -1,0 +1,175 @@
+<!-- Main content -->
+<div class="main-content">
+
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">Quản lý đánh giá sản phẩm</h1>
+        </div>
+
+        <!-- Ratings list -->
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover datatable">
+                        <thead>
+                            <tr>
+                                <th width="5%">STT</th>
+                                <th>Sản phẩm</th>
+                                <th>Người dùng</th>
+                                <th>Đánh giá</th>
+                                <th>Nhận xét</th>
+                                <th>Ngày đánh giá</th>
+                                <th width="10%">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% ratings.forEach((rating, index) => { %>
+                                <tr>
+                                    <td><%= index + 1 %></td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <% if (rating.product && rating.product.images && rating.product.images.length > 0) { %>
+                                                <img src="<%= rating.product.images[0] %>"
+                                                    alt="<%= rating.product.name %>" class="me-2"
+                                                    style="width: 40px; height: 40px; object-fit: cover;">
+                                            <% } %>
+                                            <span><%= rating.product ? rating.product.name : 'N/A' %></span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <% if (rating.user && rating.user.avatar) { %>
+                                                <img src="<%= rating.user.avatar %>" alt="<%= rating.user.name %>"
+                                                    class="me-2 rounded-circle"
+                                                    style="width: 30px; height: 30px; object-fit: cover;">
+                                            <% } %>
+                                            <div>
+                                                <div><%= rating.user ? rating.user.name : 'N/A' %></div>
+                                                <small class="text-muted"><%= rating.user ? rating.user.email : 'N/A' %></small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="rating">
+                                            <% for (let i = 1; i <= 5; i++) { %>
+                                                <span class="star <%= i <= rating.rating ? 'active' : '' %>">★</span>
+                                            <% } %>
+                                            <span class="ms-1">(<%= rating.rating %>/5)</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="comment-text">
+                                            <%= rating.comment.length > 50 ? rating.comment.substring(0, 50) + '...' : rating.comment %>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <%= new Date(rating.createdAt).toLocaleString('vi-VN') %>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="form-check form-switch me-2">
+                                                <input class="form-check-input toggle-status" type="checkbox"
+                                                    <%= rating.isActive ? 'checked' : '' %>
+                                                    data-url="/ratings/<%= rating._id %>/status"
+                                                    data-id="status-badge-<%= rating._id %>">
+                                            </div>
+                                            <span class="badge status-badge" id="status-badge-<%= rating._id %>"
+                                                data-active="<%= rating.isActive %>">
+                                                <%= rating.isActive ? 'Hiển thị' : 'Ẩn' %>
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                            <% if (ratings.length === 0) { %>
+                                <tr>
+                                    <td colspan="7" class="text-center">Không có đánh giá nào</td>
+                                </tr>
+                            <% } %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .rating .star {
+        color: #ccc;
+        font-size: 18px;
+    }
+
+    .rating .star.active {
+        color: #ffc107;
+    }
+
+    .status-badge {
+        min-width: 80px;
+        text-align: center;
+    }
+
+    .status-badge[data-active="true"] {
+        background-color: #198754;
+    }
+
+    .status-badge[data-active="false"] {
+        background-color: #dc3545;
+    }
+
+    .comment-text {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+
+<%- contentFor('script') %>
+    <script>
+        $(document).ready(function () {
+            // Khởi tạo DataTable
+            const table = $('.datatable').DataTable({
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/vi.json'
+                },
+                order: [[0, 'asc']],
+                pageLength: 10,
+                responsive: true
+            });
+
+            // Xử lý cập nhật trạng thái
+            $('.toggle-status').on('change', function () {
+                const id = $(this).data('id');
+                const isActive = this.checked;
+                const badge = $(`#${id}`);
+
+                if (!confirm('Bạn có chắc chắn muốn thay đổi trạng thái đánh giá này?')) {
+                    this.checked = !isActive;
+                    return;
+                }
+
+                $.ajax({
+                    url: `/ratings/${id}/status`,
+                    method: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ isActive: isActive }),
+                    success: function (response) {
+                        if (response.success) {
+                            badge.attr('data-active', isActive)
+                                .text(isActive ? 'Hiển thị' : 'Ẩn');
+
+                            toastr.success('Cập nhật trạng thái thành công');
+                        } else {
+                            toastr.error(response.message || 'Có lỗi xảy ra khi cập nhật trạng thái');
+                            this.checked = !isActive;
+                        }
+                    },
+                    error: function (xhr) {
+                        toastr.error('Có lỗi xảy ra khi cập nhật trạng thái');
+                        this.checked = !isActive;
+                    }
+                });
+            });
+        });
+    </script>

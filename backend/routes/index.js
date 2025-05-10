@@ -13,6 +13,7 @@ const dashboardController = require('../controllers/dashboardController');
 const productController = require('../controllers/productController');
 const userController = require('../controllers/userController');
 const orderController = require('../controllers/orderController');
+const ratingController = require('../controllers/ratingController');
 
 // Multer configuration
 const storage = multer.diskStorage({
@@ -102,6 +103,15 @@ orderRoutes.patch('/status/:id', orderController.updateStatus);
 orderRoutes.patch('/payment-status/:id', orderController.updatePaymentStatus);
 
 router.use('/orders', orderRoutes);
+
+// Rating routes
+const ratingRoutes = express.Router();
+ratingRoutes.use(authMiddleware.requireAuth);
+
+ratingRoutes.get('/', ratingController.index);
+ratingRoutes.put('/:id/status', ratingController.updateStatus);
+
+router.use('/ratings', ratingRoutes);
 
 // Reports route
 router.get('/reports', authMiddleware.requireAuth, authMiddleware.isAdmin, reportController.index);

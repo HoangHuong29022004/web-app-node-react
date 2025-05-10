@@ -6,6 +6,7 @@ const Category = require('./002_create_categories');
 const Product = require('./003_create_products');
 const Order = require('./004_create_orders');
 const Cart = require('./005_create_carts');
+const Rating = require('./006_create_ratings');
 
 const hashPassword = async (password) => {
     const salt = await bcrypt.genSalt(10);
@@ -280,6 +281,60 @@ const runMigrations = async () => {
             }
             console.log('Đã tạo giỏ hàng mẫu');
         }
+
+        // Thêm dữ liệu mẫu cho ratings
+        const ratings = await Rating.find();
+        if (ratings.length === 0) {
+            const products = await Product.find();
+            const users = await User.find({ role: 'user' });
+
+            if (products.length > 0 && users.length > 0) {
+                const sampleRatings = [
+                    {
+                        product: products[0]._id,
+                        user: users[0]._id,
+                        rating: 5,
+                        comment: 'Sản phẩm rất tốt, đóng gói cẩn thận',
+                        isActive: true
+                    },
+                    {
+                        product: products[1]._id,
+                        user: users[1]._id,
+                        rating: 4,
+                        comment: 'Chất lượng sản phẩm tốt, giá cả hợp lý',
+                        isActive: true
+                    },
+                    {
+                        product: products[2]._id,
+                        user: users[0]._id,
+                        rating: 3,
+                        comment: 'Sản phẩm tạm ổn, chưa đánh giá được độ bền',
+                        isActive: true
+                    },
+                    {
+                        product: products[0]._id,
+                        user: users[1]._id,
+                        rating: 5,
+                        comment: 'Đã mua và rất hài lòng với chất lượng',
+                        isActive: true
+                    },
+                    {
+                        product: products[1]._id,
+                        user: users[0]._id,
+                        rating: 4,
+                        comment: 'Sản phẩm đúng như mô tả, giao hàng nhanh',
+                        isActive: true
+                    }
+                ];
+
+                // Thêm ratings vào database
+                await Rating.insertMany(sampleRatings);
+                console.log('Đã tạo đánh giá mẫu');
+            } else {
+                console.log('Không thể tạo đánh giá mẫu: Thiếu sản phẩm hoặc người dùng');
+            }
+        }
+
         console.log('Migration hoàn tất');
         process.exit(0);
     } catch (error) {
