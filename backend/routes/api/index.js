@@ -7,6 +7,7 @@ const categoryController = require('../../controllers/api/categoryController');
 const productController = require('../../controllers/api/productController');
 const cartController = require('../../controllers/api/cartController');
 const orderController = require('../../controllers/api/orderController');
+const ratingController = require('../../controllers/api/ratingController');
 
 // Category routes
 router.get('/categories', categoryController.getCategories);
@@ -31,5 +32,12 @@ router.post('/orders', protect, orderController.createOrder);
 router.put('/orders/:id/cancel', protect, orderController.cancelOrder);
 router.put('/orders/:id/update-status', protect, orderController.updateStatus);
 router.put('/orders/:id/pay', protect, orderController.payOrder);
+
+// Rating routes
+router.get('/products/:productId/ratings', ratingController.getProductRatings);
+router.post('/products/:productId/ratings', protect, ratingController.createRating);
+router.put('/ratings/:ratingId', protect, ratingController.updateRating);
+router.delete('/ratings/:ratingId', protect, ratingController.deleteRating);
+router.get('/products/:productId/can-review', protect, ratingController.checkCanReview);
 
 module.exports = router; 

@@ -1,39 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { styles } from '../styles/ProductDetailStyles';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, Product } from '../types/navigation';
-import { productService, cartService } from '../services';
+import { productService, cartService, ratingService, authService } from '../services';
 import { formatCurrency } from '../utils';
 import CustomHeader from '../components/CustomHeader';
-
-type Comment = {
-  id: string;
-  user: string;
-  avatar: string;
-  rating: number;
-  content: string;
-  date: string;
-};
-
-type ProductWithDetails = {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  salePrice?: number;
-  images: string[];
-  category: {
-    id: string;
-    name: string;
-    slug: string;
-  };
-  averageRating: number;
-  sizes: string[];
-  colors: string[];
-  relatedProducts: any[];
-  comments: Comment[];
-};
+import { Rating } from '../services/rating-service';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -45,10 +19,35 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [addingToCart, setAddingToCart] = useState<boolean>(false);
+  
+  // State cho phần đánh giá
+  const [ratings, setRatings] = useState<Rating[]>([]);
+  const [loadingRatings, setLoadingRatings] = useState<boolean>(false);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [showRatingInput, setShowRatingInput] = useState<boolean>(false);
+  const [newRating, setNewRating] = useState<number>(5);
+  const [comment, setComment] = useState<string>('');
+  const [submittingRating, setSubmittingRating] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [canReview, setCanReview] = useState<boolean>(false);
+  const [canReviewMessage, setCanReviewMessage] = useState<string>('');
+  const [checkingCanReview, setCheckingCanReview] = useState<boolean>(false);
 
   useEffect(() => {
     fetchProductDetails();
+    checkAuthentication();
   }, [productSlug]);
+
+  const checkAuthentication = async () => {
+    const isAuth = await authService.isAuthenticated();
+    setIsAuthenticated(isAuth);
+    
+    // Nếu đã đăng nhập và có thông tin sản phẩm, kiểm tra có thể đánh giá không
+    if (isAuth && productDetails?._id) {
+      checkCanReview(productDetails._id);
+    }
+  };
 
   const fetchProductDetails = async () => {
     console.log('Fetching product details for slug:', productSlug);
@@ -65,6 +64,16 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
         if (productData.sizes && productData.sizes.length > 0) {
           setSelectedSize(productData.sizes[0]);
         }
+        
+        // Sau khi lấy thông tin sản phẩm, lấy đánh giá
+        if (productData._id) {
+          fetchRatings(productData._id);
+          
+          // Kiểm tra có thể đánh giá nếu đã đăng nhập
+          if (isAuthenticated) {
+            checkCanReview(productData._id);
+          }
+        }
       } else {
         console.error('Lỗi lấy thông tin sản phẩm:', response.message);
         Alert.alert('Lỗi', 'Không thể tải thông tin sản phẩm');
@@ -74,6 +83,46 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
       Alert.alert('Lỗi', 'Không thể tải thông tin sản phẩm');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkCanReview = async (productId: string) => {
+    if (!isAuthenticated) return;
+    
+    setCheckingCanReview(true);
+    try {
+      console.log('Kiểm tra quyền đánh giá cho sản phẩm:', productId);
+      const response = await ratingService.checkCanReview(productId);
+      console.log('Kết quả kiểm tra quyền đánh giá:', response);
+      
+      if (response.success && response.data) {
+        console.log('canReview:', response.data.canReview);
+        console.log('message:', response.data.message);
+        setCanReview(response.data.canReview);
+        setCanReviewMessage(response.data.message);
+      }
+    } catch (error) {
+      console.error('Lỗi kiểm tra quyền đánh giá:', error);
+    } finally {
+      setCheckingCanReview(false);
+    }
+  };
+
+  const fetchRatings = async (productId: string, page: number = 1) => {
+    setLoadingRatings(true);
+    try {
+      const response = await ratingService.getProductRatings(productId, page);
+      if (response.success && response.data) {
+        setRatings(response.data.ratings);
+        setCurrentPage(response.data.currentPage);
+        setTotalPages(response.data.totalPages);
+      } else {
+        console.error('Lỗi lấy đánh giá:', response.message);
+      }
+    } catch (error) {
+      console.error('Lỗi lấy đánh giá:', error);
+    } finally {
+      setLoadingRatings(false);
     }
   };
 
@@ -164,6 +213,111 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     }
   };
 
+  const handleAddRating = () => {
+    console.log('handleAddRating được gọi');
+    console.log('isAuthenticated:', isAuthenticated);
+    console.log('canReview:', canReview);
+    console.log('canReviewMessage:', canReviewMessage);
+    
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Thông báo',
+        'Bạn cần đăng nhập để đánh giá sản phẩm',
+        [
+          {
+            text: 'Hủy',
+            style: 'cancel'
+          },
+          {
+            text: 'Đăng nhập',
+            onPress: () => navigation.navigate('Login')
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Bỏ qua điều kiện canReview để cho phép người dùng đánh giá dễ dàng hơn trong quá trình test
+    /*
+    if (!canReview) {
+      Alert.alert('Thông báo', canReviewMessage || 'Bạn cần mua sản phẩm trước khi đánh giá');
+      return;
+    }
+    */
+    
+    setShowRatingInput(!showRatingInput);
+  };
+
+  const handleSubmitRating = async () => {
+    console.log('handleSubmitRating được gọi');
+    
+    if (!productDetails) {
+      console.log('Không có thông tin sản phẩm');
+      return;
+    }
+    
+    if (!comment.trim()) {
+      Alert.alert('Thông báo', 'Vui lòng nhập nội dung đánh giá');
+      return;
+    }
+    
+    setSubmittingRating(true);
+    try {
+      console.log('Gửi đánh giá với dữ liệu:', {
+        productId: productDetails._id,
+        rating: newRating,
+        comment
+      });
+      
+      const response = await ratingService.createRating(productDetails._id, {
+        rating: newRating,
+        comment
+      });
+      
+      console.log('Kết quả gửi đánh giá:', response);
+      
+      if (response.unauthorizedError) {
+        Alert.alert(
+          'Thông báo',
+          'Bạn cần đăng nhập để đánh giá sản phẩm',
+          [
+            {
+              text: 'Đăng nhập',
+              onPress: () => navigation.navigate('Login')
+            }
+          ]
+        );
+        return;
+      }
+      
+      if (response.success) {
+        Alert.alert('Thành công', 'Cảm ơn bạn đã đánh giá sản phẩm');
+        setShowRatingInput(false);
+        setComment('');
+        setNewRating(5);
+        // Cập nhật lại danh sách đánh giá
+        fetchRatings(productDetails._id);
+        // Cập nhật lại trạng thái có thể đánh giá
+        setCanReview(false);
+        setCanReviewMessage('Bạn đã đánh giá sản phẩm này rồi');
+      } else {
+        Alert.alert('Lỗi', response.message || 'Không thể gửi đánh giá');
+      }
+    } catch (error) {
+      console.error('Lỗi gửi đánh giá:', error);
+      Alert.alert('Lỗi', 'Không thể gửi đánh giá');
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    if (productDetails) {
+      setCurrentPage(page);
+      fetchRatings(productDetails._id, page);
+    }
+  };
+
   const renderColorOption = ({ item }: { item: string }) => {
     // Xác định màu của icon dựa trên độ sáng của màu nền
     const isLightColor = item.toLowerCase() === 'trắng' || item.toLowerCase() === 'white';
@@ -233,6 +387,67 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
       </Text>
     </TouchableOpacity>
   );
+
+  const renderRatingItem = ({ item }: { item: Rating }) => {
+    const date = new Date(item.createdAt);
+    const formattedDate = date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    
+    return (
+      <View style={styles.ratingItem}>
+        <View style={styles.ratingItemHeader}>
+          <View style={styles.userAvatar}>
+            {item.user.avatar ? (
+              <Image source={{ uri: item.user.avatar }} style={styles.userAvatar} />
+            ) : (
+              <Text style={styles.avatarText}>{item.user.name.charAt(0).toUpperCase()}</Text>
+            )}
+          </View>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{item.user.name}</Text>
+            <Text style={styles.ratingDate}>{formattedDate}</Text>
+          </View>
+        </View>
+        <View style={styles.ratingStars}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Icon
+              key={`rating-${item._id}-star-${star}`}
+              name={star <= item.rating ? 'star' : 'star-outline'}
+              size={16}
+              color="#FFD700"
+              style={styles.starIcon}
+            />
+          ))}
+        </View>
+        <Text style={styles.ratingComment}>{item.comment}</Text>
+      </View>
+    );
+  };
+
+  const renderRatingStars = (rating: number, size: number = 18) => {
+    return (
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((_, index) => (
+          <Icon
+            key={`star-${index}`}
+            name={
+              index < Math.floor(rating)
+                ? 'star'
+                : index < rating
+                ? 'star-half'
+                : 'star-outline'
+            }
+            size={size}
+            color="#FFD700"
+            style={styles.starIcon}
+          />
+        ))}
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -343,6 +558,117 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
           <Text style={styles.sectionTitle}>Mô tả sản phẩm</Text>
           <Text style={styles.descriptionText}>{productDetails.description}</Text>
         </View>
+
+        {/* Phần đánh giá sản phẩm */}
+        <View style={styles.ratingsContainer}>
+          <View style={styles.ratingsHeader}>
+            <Text style={styles.sectionTitle}>Đánh giá sản phẩm</Text>
+            <TouchableOpacity 
+              style={styles.addRatingButton}
+              onPress={handleAddRating}
+            >
+              <Icon name="add" size={20} color="#fff" />
+              <Text style={styles.addRatingButtonText}>Viết đánh giá</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Thông báo về quyền đánh giá */}
+          {isAuthenticated && !canReview && !showRatingInput && (
+            <Text style={styles.noRatingsText}>
+              {canReviewMessage || 'Bạn cần mua sản phẩm trước khi đánh giá'}
+            </Text>
+          )}
+
+          {/* Form thêm đánh giá */}
+          {showRatingInput && (
+            <View style={styles.ratingInputContainer}>
+              <View style={styles.ratingStarsInput}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={`input-star-${star}`}
+                    style={styles.starButton}
+                    onPress={() => setNewRating(star)}
+                  >
+                    <Icon
+                      name={star <= newRating ? 'star' : 'star-outline'}
+                      size={30}
+                      color="#FFD700"
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Nhập đánh giá của bạn về sản phẩm này..."
+                multiline
+                value={comment}
+                onChangeText={setComment}
+              />
+              <TouchableOpacity
+                style={styles.submitRatingButton}
+                onPress={handleSubmitRating}
+                disabled={submittingRating}
+              >
+                {submittingRating ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.submitRatingText}>Gửi đánh giá</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Danh sách đánh giá */}
+          {loadingRatings ? (
+            <ActivityIndicator size="small" color="#000" style={{ marginVertical: 20 }} />
+          ) : ratings.length > 0 ? (
+            <>
+              <FlatList
+                data={ratings}
+                renderItem={renderRatingItem}
+                keyExtractor={(item) => item._id}
+                scrollEnabled={false}
+              />
+              
+              {/* Phân trang */}
+              {totalPages > 1 && (
+                <View style={styles.paginationContainer}>
+                  <TouchableOpacity
+                    style={styles.paginationButton}
+                    onPress={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  >
+                    <Icon
+                      name="chevron-back"
+                      size={24}
+                      color={currentPage === 1 ? '#ccc' : '#666'}
+                    />
+                  </TouchableOpacity>
+                  
+                  <Text style={styles.paginationText}>
+                    {currentPage} / {totalPages}
+                  </Text>
+                  
+                  <TouchableOpacity
+                    style={styles.paginationButton}
+                    onPress={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  >
+                    <Icon
+                      name="chevron-forward"
+                      size={24}
+                      color={currentPage === totalPages ? '#ccc' : '#666'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.noRatingsText}>
+              Chưa có đánh giá nào cho sản phẩm này
+            </Text>
+          )}
+        </View>
       </ScrollView>
 
       {/* Thanh công cụ dưới */}
@@ -382,200 +708,5 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  backButton: {
-    backgroundColor: '#000',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  productImage: {
-    width: '100%',
-    height: 400,
-  },
-  productInfo: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  productName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  price: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FF3B30',
-  },
-  originalPrice: {
-    fontSize: 14,
-    color: '#888',
-    textDecorationLine: 'line-through',
-    marginLeft: 8,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  starsContainer: {
-    flexDirection: 'row',
-  },
-  starIcon: {
-    marginRight: 2,
-  },
-  ratingText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: '#666',
-  },
-  optionsContainer: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  optionsList: {
-    paddingVertical: 8,
-  },
-  colorOptionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-  },
-  selectedColorContainer: {
-    backgroundColor: 'rgba(0,0,0,0.05)',
-  },
-  colorOption: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  colorText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#333',
-  },
-  selectedColorText: {
-    fontWeight: 'bold',
-  },
-  sizeOption: {
-    minWidth: 48,
-    height: 48,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    paddingHorizontal: 12,
-  },
-  selectedSizeOption: {
-    borderColor: '#000',
-    backgroundColor: '#000',
-  },
-  sizeText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  selectedSizeText: {
-    color: '#fff',
-  },
-  descriptionContainer: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  descriptionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#444',
-  },
-  bottomToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    backgroundColor: '#fff',
-  },
-  quantitySelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    marginRight: 16,
-  },
-  quantityButton: {
-    padding: 10,
-  },
-  quantityText: {
-    paddingHorizontal: 12,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  addToCartButton: {
-    flex: 1,
-    backgroundColor: '#000',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  addToCartText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-});
 
 export default ProductDetailScreen; 

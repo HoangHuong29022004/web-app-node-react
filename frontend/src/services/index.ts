@@ -14,6 +14,8 @@ export {default as productService} from './product-service';
 export {default as categoryService} from './category-service';
 export {default as orderService} from './order-service';
 export {default as cartService} from './cart-service';
+export {default as ratingService} from './rating-service';
+export {default as notificationService} from './notification-service';
 
 // Export các kiểu dữ liệu
 export type {AuthUser, AuthData} from './auth-service';
@@ -31,6 +33,12 @@ export type {
   OrderResponse,
   CreateOrderData,
 } from './order-service';
+export type {
+  Rating,
+  RatingListData,
+  RatingResponse,
+  RatingRequest
+} from './rating-service';
 
 // Utility functions
 export const formatCurrency = (amount: number): string => {
